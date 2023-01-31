@@ -1,3 +1,6 @@
 [submodule "deps/euphrates"]
 	path = deps/euphrates
 	url = git://git.vau.place/euphrates.git
+[submodule "deps/tegfs"]
+	path = deps/tegfs
+	url = git://git.vau.place/tegfs.git
