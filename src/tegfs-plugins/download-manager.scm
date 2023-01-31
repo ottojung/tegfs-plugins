@@ -19,6 +19,7 @@
  (guile
   (define-module (tegfs-plugins download-manager)
     :use-module ((euphrates catch-any) :select (catch-any))
+    :use-module ((euphrates directory-files) :select (directory-files))
     :use-module ((euphrates dprintln) :select (dprintln))
     :use-module ((euphrates file-delete) :select (file-delete))
     :use-module ((euphrates read-string-file) :select (read-string-file))
@@ -29,9 +30,8 @@
     :use-module ((euphrates url-get-hostname-and-port) :select (url-get-hostname-and-port))
     :use-module ((euphrates url-get-path) :select (url-get-path))
     :use-module ((euphrates with-ignore-errors) :select (with-ignore-errors!))
-    )
-  (use-modules (ice-9 ftw))
-  ))
+    :use-module ((tegfs a-weblink-q) :select (a-weblink?))
+    )))
 
 (define (check-dependency program-name)
   (define command
@@ -51,17 +51,6 @@
   (define code (status:exit-val status))
   (unless (= 0 code)
     (throw 'plugin-initialization-failed errormsg)))
-
-(define (a-weblink? string)
-  (or (string-prefix? "blob:http" string)
-      (string-prefix? "http://" string)
-      (string-prefix? "https://" string)))
-
-(define (directory-files* dir)
-  (map
-   (lambda (name)
-     (string-append dir "/" name))
-   (scandir dir (negate (lambda (path) (member path '("." "..")))))))
 
 ;; Example `target' handled by this function:
 ;; https://boards.4chan.org/r/thread/18729837#p18729841
@@ -136,7 +125,7 @@
          (with-ignore-errors! (mkdir (string-append root "/tmp")))
          (with-ignore-errors! (mkdir output-dir))
 
-         (for-each file-delete (directory-files* output-dir))
+         (for-each file-delete (map car (directory-files output-dir)))
 
          (let ((s (system* "youtube-dl" target "-o" output-template)))
            (unless (= 0 (status:exit-val s))
