@@ -131,7 +131,7 @@
            (unless (= 0 (status:exit-val s))
              (throw 'download-failed)))
 
-         (let ((-temporary-file (car (directory-files* output-dir))))
+         (let ((-temporary-file (car (map car (directory-files output-dir)))))
            `((-temporary-file . ,-temporary-file)
              (download? . yes))))))
 
