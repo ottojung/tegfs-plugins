@@ -22,35 +22,40 @@
     :use-module ((euphrates directory-files) :select (directory-files))
     :use-module ((euphrates dprintln) :select (dprintln))
     :use-module ((euphrates file-delete) :select (file-delete))
-    :use-module ((euphrates read-string-file) :select (read-string-file))
+    :use-module ((euphrates run-syncproc-re) :select (run-syncproc/re))
     :use-module ((euphrates string-strip) :select (string-strip))
     :use-module ((euphrates string-to-words) :select (string->words))
     :use-module ((euphrates stringf) :select (stringf))
+    :use-module ((euphrates un-tilda-s) :select (un~s))
     :use-module ((euphrates url-get-fragment) :select (url-get-fragment))
     :use-module ((euphrates url-get-hostname-and-port) :select (url-get-hostname-and-port))
     :use-module ((euphrates url-get-path) :select (url-get-path))
     :use-module ((euphrates with-ignore-errors) :select (with-ignore-errors!))
+    :use-module ((euphrates write-string-file) :select (write-string-file))
     :use-module ((tegfs a-weblink-q) :select (a-weblink?))
     )))
 
-(define (check-dependency program-name)
-  (define command
-    (with-output-to-string
-      (lambda _
-        (display "command -v ")
-        (write program-name)
-        (display " >/dev/null 2>/dev/null"))))
-  (define errormsg
-    (with-output-to-string
-      (lambda _
-        (display "Missing dependency ")
-        (write program-name)
-        (display ". Please install it first if you want to use the download-manager plugin"))))
+(define (cmd command . args)
+  (string-strip
+   (apply run-syncproc/re (cons command args))))
 
-  (define status (system command))
+(define (cmd/ignore-output command . args)
+  (define status (apply system* (cons command args)))
   (define code (status:exit-val status))
   (unless (= 0 code)
-    (throw 'plugin-initialization-failed errormsg)))
+    (throw 'subprocess-failed)))
+
+(define (check-dependency program-name)
+  (catch-any
+   (lambda _
+     (cmd/ignore-output
+      "sh" "-c"
+      (stringf "command -v ~s >/dev/null 2>/dev/null" program-name)))
+   (lambda _
+     (parameterize ((current-output-port (current-error-port)))
+       (display "Missing dependency ")
+       (write program-name)
+       (display ". Please install it first if you want to use the download-manager plugin")))))
 
 ;; Example `target' handled by this function:
 ;; https://boards.4chan.org/r/thread/18729837#p18729841
@@ -69,41 +74,31 @@
       (with-ignore-errors! (mkdir (string-append root "/tmp")))
       (string-append root "/tmp/" "4chan.json")))
   (define _2
-    (let ((s (system* "wget" thread-json-link "-O" json-path)))
-      (unless (= 0 (status:exit-val s))
-        (throw 'download-failed))))
+    (cmd/ignore-output "wget" thread-json-link "-O" json-path))
   (define jq-post-path
     (stringf "~a/tmp/4chan.post.jq" root))
   (define jq-select-thread-command
     (if comment-id
         (stringf ".posts[] | select(.no == ~a)" comment-id)
         ".posts[0]"))
-  (define _1
-    (let ((s (system (stringf "jq ~s ~s > ~s" jq-select-thread-command json-path jq-post-path))))
-      (unless (= 0 (status:exit-val s))
-        (throw 'jq-failed))))
+  (define post/json
+    (cmd "jq" jq-select-thread-command json-path))
+  (define _8112
+    (write-string-file jq-post-path post/json))
   (define jq-tmp-path
     (stringf "~a/tmp/4chan.jq" root))
   (define (get-post-field name)
-    (let ((s (system (stringf "jq .~a ~s > ~s" name jq-post-path jq-tmp-path))))
-      (unless (= 0 (status:exit-val s))
-        (throw 'jq-failed)))
-    (string-strip (read-string-file jq-tmp-path)))
-  (define (unescape escaped)
-    (with-input-from-string escaped (lambda _ (read))))
+    (cmd "jq" (string-append "." name) jq-post-path))
   (define tim (get-post-field "tim"))
-  (define filename (unescape (get-post-field "filename")))
-  (define ext (unescape (get-post-field "ext")))
-  (define note (unescape (get-post-field "com")))
+  (define filename (un~s (get-post-field "filename")))
+  (define ext (un~s (get-post-field "ext")))
+  (define note (un~s (get-post-field "com")))
   (define download-link
     (stringf "https://i.4cdn.org/~a/~a~a" board tim ext))
-
   (define -temporary-file
     (stringf "~a/tmp/4chan-file~a" root ext))
 
-  (let ((s (system* "wget" download-link "-O" -temporary-file)))
-    (unless (= 0 (status:exit-val s))
-      (throw 'download-failed)))
+  (cmd/ignore-output "wget" download-link "-O" -temporary-file)
 
   `((-temporary-file . ,-temporary-file)
     (target-basename . ,filename)
@@ -127,9 +122,7 @@
 
          (for-each file-delete (map car (directory-files output-dir)))
 
-         (let ((s (system* "youtube-dl" target "-o" output-template)))
-           (unless (= 0 (status:exit-val s))
-             (throw 'download-failed)))
+         (cmd/ignore-output "youtube-dl" target "-o" output-template)
 
          (let ((-temporary-file (car (map car (directory-files output-dir)))))
            `((-temporary-file . ,-temporary-file)
@@ -142,31 +135,23 @@
       (with-ignore-errors! (mkdir (string-append root "/tmp")))))
 
   (define pagepath (string-append root "/tmp/booru.html"))
-  (define anspath (string-append root "/tmp/booru-ans"))
   (define -temporary-file (string-append root "/tmp/booru-download"))
 
   (define _8123
-    (let ((s (system* "wget" target "-O" pagepath)))
-      (unless (= 0 (status:exit-val s))
-        (throw 'download-failed))))
+    (cmd/ignore-output "wget" target "-O" pagepath))
 
   (define download-link/0
-    (let* ((s (system (stringf "pup 'section[data-tags] attr{data-large-file-url}' -f ~s > ~s" pagepath anspath))))
-      (string-strip (read-string-file anspath))))
+    (cmd "pup" "section[data-tags] attr{data-large-file-url}" "-f" pagepath))
 
   (define download-link
     (if (not (string-null? download-link/0)) download-link/0
-        (let* ((s (system (stringf "pup 'section[data-tags] img attr{src}' -f ~s > ~s" pagepath anspath))))
-          (string-strip (read-string-file anspath)))))
+        (cmd "pup" "section[data-tags] img attr{src}" "-f" pagepath)))
 
   (define _7172
-    (let ((s (system* "wget" download-link "-O" -temporary-file)))
-      (unless (= 0 (status:exit-val s))
-        (throw 'download-failed))))
+    (cmd/ignore-output "wget" download-link "-O" -temporary-file))
 
   (define tags/0
-    (let* ((s (system (stringf "pup 'section[data-tags] attr{data-tags}' -f ~s > ~s" pagepath anspath))))
-      (string-strip (read-string-file anspath))))
+    (cmd "pup" "section[data-tags] attr{data-tags}" "-f" pagepath))
 
   (define tags
     (if (string-null? tags/0) #f
@@ -182,7 +167,7 @@
 
 (define (handle-by-url config root current-alist target site)
   (or
-   (and (equal? "boards.4chan.org" site)
+   (and (member site '("boards.4chan.org" "boards.4channel.org"))
         (download-4chan-media config root current-alist target))
    (and (member site '("youtube.com" "youtu.be" "m.youtube.com" "yewtu.be"))
         (download-youtube-media config root current-alist target))
