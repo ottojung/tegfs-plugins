@@ -26,7 +26,7 @@
   (unless (= 0 code)
     (throw 'plugin-initialization-failed "No exiftool program found. Please install it first if you want to use the exif-remover plugin")))
 
-(lambda (config root entry fullpath)
+(lambda (root entry fullpath)
   (define preview-prefix (string-append root "/cache"))
   (define preview? (string-prefix? preview-prefix fullpath))
   (and (not preview?)

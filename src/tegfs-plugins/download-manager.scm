@@ -59,7 +59,7 @@
 
 ;; Example `target' handled by this function:
 ;; https://boards.4chan.org/r/thread/18729837#p18729841
-(define (download-4chan-media config root current-alist target)
+(define (download-4chan-media root current-alist target)
   (define path (url-get-path target))
   (define split (string-split path #\/))
   (define board (list-ref split 1))
@@ -106,7 +106,7 @@
     (note . ,note)
     (download? . yes)))
 
-(define (download-youtube-media config root current-alist target)
+(define (download-youtube-media root current-alist target)
   (define download?
     (cdr (or (assq 'download? current-alist) (cons #f #f))))
   (define output-dir
@@ -128,7 +128,7 @@
            `((-temporary-file . ,-temporary-file)
              (download? . yes))))))
 
-(define (download-booru-media config root current-alist target)
+(define (download-booru-media root current-alist target)
   (define _912
     (begin
       (with-ignore-errors! (mkdir root))
@@ -165,20 +165,20 @@
 
    (if tags (list (cons 'tags tags)) '())))
 
-(define (handle-by-url config root current-alist target site)
+(define (handle-by-url root current-alist target site)
   (or
    (and (member site '("boards.4chan.org" "boards.4channel.org"))
-        (download-4chan-media config root current-alist target))
+        (download-4chan-media root current-alist target))
    (and (member site '("youtube.com" "youtu.be" "m.youtube.com" "yewtu.be"))
-        (download-youtube-media config root current-alist target))
+        (download-youtube-media root current-alist target))
    (and (string-contains site "booru")
-        (download-booru-media config root current-alist target))))
+        (download-booru-media root current-alist target))))
 
-(define (handle config root current-alist target)
+(define (handle root current-alist target)
   (define site
     (and target (url-get-hostname-and-port target)))
   (catch-any
-   (lambda _ (handle-by-url config root current-alist target site))
+   (lambda _ (handle-by-url root current-alist target site))
    (lambda errors
      (parameterize ((current-output-port (current-error-port)))
        (dprintln "Download manager failed to handle a recognized link.")
@@ -186,7 +186,7 @@
        (newline) (newline)
        #f))))
 
-(define (main config root current-alist)
+(define (main root current-alist)
   (define target
     (cdr (or (assq '-text-content current-alist) (cons #f #f))))
   (define temp
@@ -196,7 +196,7 @@
    (and (not temp)
         (string? target)
         (a-weblink? target)
-        (handle config root current-alist target))
+        (handle root current-alist target))
    '()))
 
 (check-dependency "wget")
